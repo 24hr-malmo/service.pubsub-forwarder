@@ -2,8 +2,8 @@ var zonar = require("zonar");
 var helper = require("service.helper");
 var zmq = require("zmq");
 
-var externalPub = 'tcp://127.0.0.1:5555';
-var internalSub = 'tcp://127.0.0.1:5556';
+var externalPub = 'tcp://*:8989';
+var internalSub = 'tcp://*:5556';
 var hwm = 1000;
 var verbose = 0;
 
@@ -23,7 +23,7 @@ pubSock.bindSync(externalPub);
 // When we receive data on subSock , it means someone is publishing
 subSock.on('message', function(data) {
     // We just relay it to the pubSock, so subscribers can receive it
-    pubSock.send(data + " ( through external publisher )");
+    pubSock.send(data);
 });
 
 // When Pubsock receives a message , it's subscribe requests
@@ -43,20 +43,20 @@ function proxyPublish(addr){
     var pub = zmq.socket('pub');
     var sub = zmq.socket('sub');
 
-    pub.connect(internalSub);
+    pub.connect("tcp://127.0.0.1:8989");
 
     sub.connect(addr);
     sub.subscribe("");
 
     sub.on("message", function(msg){
         console.log("got msg : " + msg.toString("utf8"));
-        pub.send(msg + " ( through internalproxy ) ");
+        pub.send(msg);
     });
 }
 
-//function simpleTestSub(){
-//    proxyPublish("tcp://127.0.0.1:6000");
-//}
+function simpleTestSub(){
+    proxyPublish("tcp://172.16.135.109:6666");
+}
 
 //simpleTestSub();
 
@@ -64,20 +64,20 @@ function proxyZonar(){
 
     var forwarders = {};
 
-    var z = zonar.create({ net : '24hr', name: 'proxy_publisher', verbose : true});
+    var z = zonar.create({ net : '24hr', name: 'pubsub_forwarder', verbose : true});
 
     console.log("listening for connections...");
     z.on("found", function(node){
 
         // do we have any payload at all?
         if (typeof node.payload != "object"){
-            console.log("no payload");
+            console.log("no payload for node : " + node.name);
             return;
         }
 
         for(var key in node.payload){
             var service = node.payload[key];
-            if( service.type == 'sub' && service.port) {
+            if( service.type == 'pub' && service.port) {
                 console.log("found pub service : ", service);
                 var full_name = node.name + "." + key;
                 var addr = helper.getServiceAddress(z, full_name);
@@ -104,16 +104,18 @@ var handler = (function(){
     return {
         add : function (addr, full_name){
 
-
             var pub = zmq.socket('pub');
             var sub = zmq.socket('sub');
 
-            pub.connect(internalSub);
+            pub.connect("tcp://127.0.0.1:5556");
 
             sub.connect(addr);
+            console.log("connecting to addr : " + addr);
             sub.subscribe("");
 
             sub.on("message", function(msg){
+                console.log("got internal message : " + msg.toString());
+
                 pub.send(msg);
             });
 
